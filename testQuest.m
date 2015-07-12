@@ -19,3 +19,7 @@ p2=delta*gamma+(1-delta)*(1-(1-gamma)*exp(-10.^(beta*x2)));
 
 figure;plot(x2,p2)
 set(gca,'xtick',x2(1:100:end),'xticklabel',x2Tick(1:100:end))
+	
+	
+	test
+		test
