@@ -6,6 +6,16 @@ input('hit enter to begin...  ');
 
 output.Subject = 'test';
 
+%%% INITIATE & GENERATE DATA FILE
+if exist(['Data_OrientTuneNoiseMask_', output.Subject, '.mat']);
+    load (['Data_OrientTuneNoiseMask_', output.Subject, '.mat']);
+    runnumber = length(TheData)+1;
+ %   output.observer = [output.Subject '_TS0' num2str(runnumber)];
+else
+    runnumber = 1;
+  %  output.observer = [output.Subject '_TS0' num2str(runnumber)];
+end
+
 %%%%%%%
 [keyboardIndices, productNames, ~] = GetKeyboardIndices;
 % deviceString= 'Teensy Keyboard/Mouse';
@@ -71,14 +81,15 @@ CenterX = w.ScreenSizePixels(3)/2; CenterY = w.ScreenSizePixels(4)/2;
 %%% Timing parameters:
 t.TheDate = datestr(now,'yymmdd');  %Collect todays date
 t.TimeStamp = datestr(now,'HHMM');  %Timestamp for saving out a uniquely named datafile (so you will never accidentally overwrite stuff)
-t.stimpresentation = 2;             % stimulus presentation time
-t.responseDur = 1;                  % response time
-t.npresentation = 10;                % number of stimulus presentation in each block
-t.nframesStim = t.stimpresentation*w.frameRate;
+t.stimDur = 1000/1000;             % stimulus presentation time
+t.responseDur = 2;                  % response time
+%t.baselineDur = 
+t.npresentation = 50;                % number of stimulus presentation in each block
+t.nframesStim = t.stimDur*w.frameRate;
 t.nframesResp = t.responseDur*w.frameRate;
 t.init = 1;
-StartTimes = t.init:(t.stimpresentation+t.responseDur):t.npresentation*(t.stimpresentation+t.responseDur);
-EndTimes = StartTimes + t.stimpresentation;
+StartTimes = t.init:(t.stimDur+t.responseDur):t.npresentation*(t.stimDur+t.responseDur);
+EndTimes = StartTimes + t.stimDur;
 
 %%% CREATE ORIENTATION FILTERED NOISE (vertical)
 % Setup Filter (spatial freq and orientation)
@@ -131,7 +142,7 @@ TargetUp  = GaussianTargUp.*SinTarg;
 TargetDown  = GaussianTargDown.*SinTarg;
 
 %%% Create Trial Events
-%
+stimUpTrials = zeros(1,t.npresentation);
 for ii=1:t.npresentation
     if rand<stim.pUp
         stimUpTrials(ii) = 1;
@@ -147,7 +158,7 @@ end
 noiseField = Shuffle(cellfun(@flipud, noiseField, 'UniformOutput', false));
 % initializing the QUEST procedure:
 quest.pThreshold=0.95;
-quest.beta=1;quest.delta=0.01;quest.gamma=0.5;quest.tGuess = -1; quest.tGuessSd = 2;
+quest.beta=1;quest.delta=0.01;quest.gamma=0.5;quest.tGuess = .1; quest.tGuessSd = 2;
 grain = [];range = log10(stim.MaxContrTarg * stim.Grey); plotIt = 1;
 q=QuestCreate(quest.tGuess,quest.tGuessSd,quest.pThreshold,quest.beta,quest.delta,quest.gamma,grain, range,plotIt);
 response = [1 1 1 1 1 1 1 1];
@@ -176,7 +187,7 @@ GetClicks;
 PsychHID('KbQueueCreate', deviceNumber, keylist);
 
 StartTimeExp = GetSecs;
-threshUpdate = nan(1,t.npresentation);
+AmplTarg = nan(1,t.npresentation);
 %%%
 for n=1:t.npresentation
     tempStim = noiseField{n};
@@ -188,14 +199,14 @@ for n=1:t.npresentation
     % 	tTest=QuestMode(q);		% Recommended by Watson & Pelli (1983)
     
     %%%
-    stim.AmplTarg(n) = 10^(q.xThreshold);
+    AmplTarg(n) = 10^(tTest);
     %%%
     if ~stimUpTrials(n)
-        TargetDown = TargetDown./max(abs(TargetDown(:))).*stim.AmplTarg(n);
+        TargetDown = TargetDown./max(abs(TargetDown(:))).*AmplTarg(n);
         noisyStim = tempNoise + TargetDown + stim.Grey;
         UpOn = 0;
     else
-        TargetUp = TargetUp./max(abs(TargetUp(:))).*stim.AmplTarg(n);
+        TargetUp = TargetUp./max(abs(TargetUp(:))).*AmplTarg(n);
         noisyStim = tempNoise + TargetUp + stim.Grey;
         UpOn = 1;
     end
@@ -212,10 +223,7 @@ for n=1:t.npresentation
     Screen('Close',Stimulus)
     %%% finding the response:
     PsychHID('KbQueueStart', deviceNumber);
-    responsewindowTrig_RSVP = 1;
     for kk=1:round(t.nframesResp)
-        GetSecs-StartTimeExp
-        t.responseDur+EndTimes(n)
         if GetSecs-StartTimeExp>t.responseDur+EndTimes(n)
             break
         else
@@ -229,8 +237,10 @@ for n=1:t.npresentation
     whichkeys = find(firstpress);
     if ((strcmp(num2str(whichkeys), keyPressNumbers{1}) && UpOn) || (strcmp(num2str(whichkeys), keyPressNumbers{2}) && ~UpOn))
         RSVP_rightwrong(n) = 1;
+        keyrec(n) = whichkeys;
     else
         RSVP_rightwrong(n) = 0;
+        keyrec(n) = whichkeys;
     end
     %%% update QUEST procedure:
     q=QuestUpdate(q,tTest,RSVP_rightwrong(n));
@@ -241,19 +251,16 @@ quest.EstThresh = QuestMean(q);		% or QuestMode or QuestQuantile
 quest.EstSd = QuestSd(q);
 fprintf('Final threshold estimate (mean+-sd) is %.2f +- %.2f\n',quest.EstThresh,quest.EstSd);
 
-
-%{
-%%% make & output
+%%% output
 output.RSVP_rightwrong = RSVP_rightwrong;
-output.mean_RSVP_rightwrong = mean(RSVP_rightwrong);
+output.AmpStim = AmplTarg;
+output.keys = keyrec;
 TheData{runnumber}.stim = stim;
 TheData{runnumber}.t = t;
 TheData{runnumber}.w = w;
-TheData{runnumber}.mylog.stimtimes_s = {output.trueOn_Time};
-TheData{runnumber}.mylog.durationss_s = {output.trueOn_duration};
-TheData{runnumber}.mylog.designMatrix = output.designMatrix;
+TheData{runnumber}.mylog.stimUp = stimUpTrials;
 TheData{runnumber}.output = output;
-eval(['save ', 'Data_tunedSuppression_', output.Subject, '.mat TheData']);
+%eval(['save ', 'Data_OrientTuneNoiseMask_', output.Subject, '.mat TheData']);
 Screen('FillOval', window, white, CenterRectOnPoint([0 0 stim.outer_fixation stim.outer_fixation], CenterX, CenterY));
 Screen('FillOval', window, stim.Grey, CenterRectOnPoint([0 0 stim.fix_diam stim.fix_diam], CenterX, CenterY));
 Screen('DrawText', window, 'DONE.', CenterX-20, CenterY-stim.annulus_diam/2);
