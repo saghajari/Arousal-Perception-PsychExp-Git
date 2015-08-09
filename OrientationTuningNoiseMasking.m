@@ -10,10 +10,10 @@ output.Subject = 'test';
 if exist(['Data_OrientTuneNoiseMask_', output.Subject, '.mat']);
     load (['Data_OrientTuneNoiseMask_', output.Subject, '.mat']);
     runnumber = length(TheData)+1;
- %   output.observer = [output.Subject '_TS0' num2str(runnumber)];
+    %   output.observer = [output.Subject '_TS0' num2str(runnumber)];
 else
     runnumber = 1;
-  %  output.observer = [output.Subject '_TS0' num2str(runnumber)];
+    %  output.observer = [output.Subject '_TS0' num2str(runnumber)];
 end
 
 %%%%%%%
@@ -83,13 +83,13 @@ t.TheDate = datestr(now,'yymmdd');  %Collect todays date
 t.TimeStamp = datestr(now,'HHMM');  %Timestamp for saving out a uniquely named datafile (so you will never accidentally overwrite stuff)
 t.stimDur = 1000/1000;             % stimulus presentation time
 t.responseDur = 2;                  % response time
-%t.baselineDur = 
+%t.baselineDur =
 t.npresentation = 50;                % number of stimulus presentation in each block
 t.nframesStim = t.stimDur*w.frameRate;
 t.nframesResp = t.responseDur*w.frameRate;
-t.init = 1;
+t.init = 0;
 StartTimes = t.init:(t.stimDur+t.responseDur):t.npresentation*(t.stimDur+t.responseDur);
-EndTimes = StartTimes + t.stimDur;
+EndTimes = StartTimes + t.stimDur;     % times for stopping displaying the stimulus
 
 %%% CREATE ORIENTATION FILTERED NOISE (vertical)
 % Setup Filter (spatial freq and orientation)
@@ -188,15 +188,16 @@ PsychHID('KbQueueCreate', deviceNumber, keylist);
 
 StartTimeExp = GetSecs;
 AmplTarg = nan(1,t.npresentation);
+keyrec = nan(1,t.npresentation);
 %%%
 for n=1:t.npresentation
     tempStim = noiseField{n};
     tempNoise = tempStim./max(tempStim(:)).* stim.AmplNoise ;
     
     %%%  setting the next QUEST test threshold (choose one of these three methods):
-    tTest=QuestQuantile(q);	% Recommended by Pelli (1987), and still our favorite.
-    % 	tTest=QuestMean(q);		% Recommended by King-Smith et al. (1994)
-    % 	tTest=QuestMode(q);		% Recommended by Watson & Pelli (1983)
+    %tTest=QuestQuantile(q);	% Recommended by Pelli (1987), and still our favorite.
+     	%tTest=QuestMean(q);		% Recommended by King-Smith et al. (1994)
+     	tTest=QuestMode(q);		% Recommended by Watson & Pelli (1983)
     
     %%%
     AmplTarg(n) = 10^(tTest);
@@ -211,6 +212,8 @@ for n=1:t.npresentation
         UpOn = 1;
     end
     Stimulus = Screen('MakeTexture', window, noisyStim);
+    
+    tic
     for kk=1:round(t.nframesStim)
         if GetSecs-StartTimeExp> EndTimes(n)
             break
@@ -220,6 +223,7 @@ for n=1:t.npresentation
         end
     end
     KbQueueFlush();
+    timeStimCheck(n)=toc;
     Screen('Close',Stimulus)
     %%% finding the response:
     PsychHID('KbQueueStart', deviceNumber);
@@ -229,7 +233,7 @@ for n=1:t.npresentation
         else
             Screen('FillOval', window, white, CenterRectOnPoint([0 0 stim.outer_fixation stim.outer_fixation], CenterX, CenterY));
             Screen('FillOval', window, stim.Grey, CenterRectOnPoint([0 0 stim.fix_diam stim.fix_diam], CenterX, CenterY));
-            Screen('DrawText', window, 'Up or Down?', tx-10, ty + 40, 255, 0);
+            Screen('DrawText', window, 'Up or Down?', tx-40, ty + 40, 255, 0);
             Screen('Flip', window);
         end
     end
@@ -237,20 +241,32 @@ for n=1:t.npresentation
     whichkeys = find(firstpress);
     if ((strcmp(num2str(whichkeys), keyPressNumbers{1}) && UpOn) || (strcmp(num2str(whichkeys), keyPressNumbers{2}) && ~UpOn))
         RSVP_rightwrong(n) = 1;
+        if ~isempty(whichkeys)
         keyrec(n) = whichkeys;
+        end
     else
         RSVP_rightwrong(n) = 0;
+        if ~isempty(whichkeys)
         keyrec(n) = whichkeys;
+        end
     end
     %%% update QUEST procedure:
+    questOut(n) = q;
     q=QuestUpdate(q,tTest,RSVP_rightwrong(n));
 end
 
 EndTime = GetSecs;
-quest.EstThresh = QuestMean(q);		% or QuestMode or QuestQuantile
+quest.EstThresh = QuestMode(q);		% or QuestMode or QuestMean or QuestQuantile
 quest.EstSd = QuestSd(q);
 fprintf('Final threshold estimate (mean+-sd) is %.2f +- %.2f\n',quest.EstThresh,quest.EstSd);
+Screen('FillOval', window, white, CenterRectOnPoint([0 0 stim.outer_fixation stim.outer_fixation], CenterX, CenterY));
+Screen('FillOval', window, stim.Grey, CenterRectOnPoint([0 0 stim.fix_diam stim.fix_diam], CenterX, CenterY));
+Screen('DrawText', window, 'DONE.', CenterX-25, CenterY-stim.annulus_diam/2);
+Screen('Flip', window);
 
+WaitSecs(3)
+ShowCursor;
+Screen('CloseAll')
 %%% output
 output.RSVP_rightwrong = RSVP_rightwrong;
 output.AmpStim = AmplTarg;
@@ -261,12 +277,3 @@ TheData{runnumber}.w = w;
 TheData{runnumber}.mylog.stimUp = stimUpTrials;
 TheData{runnumber}.output = output;
 %eval(['save ', 'Data_OrientTuneNoiseMask_', output.Subject, '.mat TheData']);
-Screen('FillOval', window, white, CenterRectOnPoint([0 0 stim.outer_fixation stim.outer_fixation], CenterX, CenterY));
-Screen('FillOval', window, stim.Grey, CenterRectOnPoint([0 0 stim.fix_diam stim.fix_diam], CenterX, CenterY));
-Screen('DrawText', window, 'DONE.', CenterX-20, CenterY-stim.annulus_diam/2);
-Screen('Flip', window);
-
-WaitSecs(3)
-%}
-ShowCursor;
-Screen('CloseAll')
